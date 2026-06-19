@@ -1,6 +1,6 @@
 {
   "name": "pi-dusage",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Pi extension package for provider quota checks across Codex, z.ai Coding CN, and MiniMax CN.",
   "type": "module",
   "keywords": [

@@ -51,6 +51,15 @@
 - 不显示明文 token（令牌）或 key（密钥）
 - 只显示可理解的窗口、百分比、重置时间
 - `zai-coding-cn` 和 `minimax-cn` 保留 provider 原始字段语义，不强行假设所有窗口都等价于“5h + 周”
+- 窗口排序：统一按重置时间升序，短窗口（如 5h）在上、长窗口（week / month）在下，不依赖各 provider API 的返回顺序
+- 用量条语义：进度条表示「剩余配额」——剩余越多填充越满且越绿，将耗尽时变红；右侧仍显示可使用量百分比
+
+## 国际化
+
+所有可见文案通过 pi-di18n 的 `pi-i18n/requestApi` 事件接入多语言，内置 `en` 与 `zh-CN` 两套文案：
+
+- 已安装 pi-di18n：注册 `dusage` namespace bundle，文案跟随 `/lang` 选择的语言；locale 切换后 overlay 自动重渲染。
+- 未安装 pi-di18n：回退到内置查表，按 `LANG` / `LC_ALL` 环境变量选择 `zh-CN` 或 `en`，不抛错。
 
 ## 安装
 

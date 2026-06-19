@@ -12,4 +12,4 @@
 
 > 在 Pi 里通过 `/dusage` 查看 `openai-codex`、`zai-coding-cn`、`minimax-cn` 的额度信息。
 
-当前 TUI 形态已升级为 overlay（覆盖层）进度条卡片；后续是否接入更多 provider，再以现有数据通路为前提推进。
+当前 TUI 形态已升级为 overlay（覆盖层）进度条卡片；文案通过 pi-di18n 接入多语言（内置 en/zh-CN，未安装时按环境变量回退）。后续是否接入更多 provider，再以现有数据通路为前提推进。
