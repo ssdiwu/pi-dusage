@@ -56,6 +56,8 @@ const DUSAGE_MESSAGES: Record<string, Record<string, string>> = {
 		noCredZai: "zai-coding-cn credentials not configured",
 		noCredMinimax: "minimax-cn credentials not configured",
 		requestFailed: "request failed HTTP {status}{detail}",
+		requestTimedOut: "request timed out",
+		requestError: "request error{detail}",
 	},
 	"zh-CN": {
 		title: "AI 用量",
@@ -69,6 +71,8 @@ const DUSAGE_MESSAGES: Record<string, Record<string, string>> = {
 		noCredZai: "未配置 zai-coding-cn 凭据",
 		noCredMinimax: "未配置 minimax-cn 凭据",
 		requestFailed: "请求失败 HTTP {status}{detail}",
+		requestTimedOut: "请求超时",
+		requestError: "请求异常{detail}",
 	},
 };
 
@@ -247,6 +251,14 @@ function requestFailedError(status: number, detail: string): NonNullable<Provide
 	return { key: "dusage.requestFailed", params: { status, detail } };
 }
 
+function requestExceptionError(error: unknown): NonNullable<ProviderUsage["error"]> {
+	if (error instanceof Error && error.name === "AbortError") {
+		return { key: "dusage.requestTimedOut" };
+	}
+	const detail = error instanceof Error ? error.message : String(error);
+	return { key: "dusage.requestError", params: { detail: detail ? `: ${detail}` : "" } };
+}
+
 function codexSecondaryLabel(limitWindowSeconds: number | undefined): string {
 	const hours = Math.round((limitWindowSeconds || 0) / 3600);
 	if (hours >= 24 * 6) return "Week";
@@ -255,9 +267,11 @@ function codexSecondaryLabel(limitWindowSeconds: number | undefined): string {
 }
 
 async function getCodexUsage(auth: Record<string, any>): Promise<ProviderUsage> {
-	const cred = (auth["openai-codex"] ?? {}) as CodexCred;
+	const provider = "openai-codex";
+	const title = "Codex";
+	const cred = (auth[provider] ?? {}) as CodexCred;
 	if (!cred.access) {
-		return { provider: "openai-codex", title: "Codex", windows: [], error: { key: "dusage.noCredCodex" } };
+		return { provider, title, windows: [], error: { key: "dusage.noCredCodex" } };
 	}
 
 	const headers: Record<string, string> = {
@@ -267,29 +281,33 @@ async function getCodexUsage(auth: Record<string, any>): Promise<ProviderUsage> 
 	};
 	if (cred.accountId) headers["ChatGPT-Account-Id"] = cred.accountId;
 
-	const { res, body } = await fetchJson("https://chatgpt.com/backend-api/wham/usage", { headers });
-	if (!res.ok || !body?.rate_limit) {
-		return {
-			provider: "openai-codex",
-			title: "Codex",
-			windows: [],
-			error: requestFailedError(res.status, body?.error?.message ? `: ${body.error.message}` : ""),
-		};
-	}
+	try {
+		const { res, body } = await fetchJson("https://chatgpt.com/backend-api/wham/usage", { headers });
+		if (!res.ok || !body?.rate_limit) {
+			return {
+				provider,
+				title,
+				windows: [],
+				error: requestFailedError(res.status, body?.error?.message ? `: ${body.error.message}` : ""),
+			};
+		}
 
-	const windows: UsageWindow[] = [];
-	const primary = body.rate_limit.primary_window;
-	if (primary) windows.push({ label: "5h", usedPercent: primary.used_percent ?? 0, resetAt: primary.reset_at });
-	const secondary = body.rate_limit.secondary_window;
-	if (secondary) {
-		windows.push({
-			label: codexSecondaryLabel(secondary.limit_window_seconds),
-			usedPercent: secondary.used_percent ?? 0,
-			resetAt: secondary.reset_at,
-		});
-	}
+		const windows: UsageWindow[] = [];
+		const primary = body.rate_limit.primary_window;
+		if (primary) windows.push({ label: "5h", usedPercent: primary.used_percent ?? 0, resetAt: primary.reset_at });
+		const secondary = body.rate_limit.secondary_window;
+		if (secondary) {
+			windows.push({
+				label: codexSecondaryLabel(secondary.limit_window_seconds),
+				usedPercent: secondary.used_percent ?? 0,
+				resetAt: secondary.reset_at,
+			});
+		}
 
-	return { provider: "openai-codex", title: "Codex", plan: body.plan_type || undefined, windows };
+		return { provider, title, plan: body.plan_type || undefined, windows };
+	} catch (error) {
+		return { provider, title, windows: [], error: requestExceptionError(error) };
+	}
 }
 
 function zaiWindowLabel(limit: any): string {
@@ -300,75 +318,87 @@ function zaiWindowLabel(limit: any): string {
 }
 
 async function getZaiUsage(auth: Record<string, any>): Promise<ProviderUsage> {
-	const cred = (auth["zai-coding-cn"] ?? {}) as KeyCred;
+	const provider = "zai-coding-cn";
+	const title = "z.ai Coding CN";
+	const cred = (auth[provider] ?? {}) as KeyCred;
 	if (!cred.key) {
-		return { provider: "zai-coding-cn", title: "z.ai Coding CN", windows: [], error: { key: "dusage.noCredZai" } };
+		return { provider, title, windows: [], error: { key: "dusage.noCredZai" } };
 	}
 
-	const { res, body } = await fetchJson("https://bigmodel.cn/api/monitor/usage/quota/limit", {
-		headers: {
-			Authorization: cred.key,
-			Accept: "application/json",
-		},
-	});
+	try {
+		const { res, body } = await fetchJson("https://bigmodel.cn/api/monitor/usage/quota/limit", {
+			headers: {
+				Authorization: cred.key,
+				Accept: "application/json",
+			},
+		});
 
-	if (!res.ok || body?.success !== true || Number(body?.code) !== 200 || !Array.isArray(body?.data?.limits)) {
-		return {
-			provider: "zai-coding-cn",
-			title: "z.ai Coding CN",
-			windows: [],
-			error: requestFailedError(res.status, body?.msg ? `: ${body.msg}` : ""),
-		};
+		if (!res.ok || body?.success !== true || Number(body?.code) !== 200 || !Array.isArray(body?.data?.limits)) {
+			return {
+				provider,
+				title,
+				windows: [],
+				error: requestFailedError(res.status, body?.msg ? `: ${body.msg}` : ""),
+			};
+		}
+
+		const windows = body.data.limits.map((limit: any) => ({
+			label: zaiWindowLabel(limit),
+			usedPercent: limit.percentage ?? 0,
+			resetAt: limit.nextResetTime,
+		} satisfies UsageWindow));
+
+		return { provider, title, plan: body.data.level || undefined, windows };
+	} catch (error) {
+		return { provider, title, windows: [], error: requestExceptionError(error) };
 	}
-
-	const windows = body.data.limits.map((limit: any) => ({
-		label: zaiWindowLabel(limit),
-		usedPercent: limit.percentage ?? 0,
-		resetAt: limit.nextResetTime,
-	} satisfies UsageWindow));
-
-	return { provider: "zai-coding-cn", title: "z.ai Coding CN", plan: body.data.level || undefined, windows };
 }
 
 async function getMinimaxUsage(auth: Record<string, any>): Promise<ProviderUsage> {
-	const cred = (auth["minimax-cn"] ?? {}) as KeyCred;
+	const provider = "minimax-cn";
+	const title = "MiniMax CN";
+	const cred = (auth[provider] ?? {}) as KeyCred;
 	if (!cred.key) {
-		return { provider: "minimax-cn", title: "MiniMax CN", windows: [], error: { key: "dusage.noCredMinimax" } };
+		return { provider, title, windows: [], error: { key: "dusage.noCredMinimax" } };
 	}
 
-	const { res, body } = await fetchJson("https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains", {
-		headers: {
-			Authorization: `Bearer ${cred.key}`,
-			Accept: "application/json",
-			"Content-Type": "application/json",
-		},
-	});
-
-	if (!res.ok || Number(body?.base_resp?.status_code) !== 0 || !Array.isArray(body?.model_remains)) {
-		return {
-			provider: "minimax-cn",
-			title: "MiniMax CN",
-			windows: [],
-			error: requestFailedError(res.status, body?.base_resp?.status_msg ? `: ${body.base_resp.status_msg}` : ""),
-		};
-	}
-
-	const windows: UsageWindow[] = [];
-	for (const item of body.model_remains) {
-		const name = item.model_name || "general";
-		windows.push({
-			label: `${name} 5h`,
-			usedPercent: 100 - (item.current_interval_remaining_percent ?? 0),
-			resetAt: item.end_time,
+	try {
+		const { res, body } = await fetchJson("https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains", {
+			headers: {
+				Authorization: `Bearer ${cred.key}`,
+				Accept: "application/json",
+				"Content-Type": "application/json",
+			},
 		});
-		windows.push({
-			label: `${name} week`,
-			usedPercent: 100 - (item.current_weekly_remaining_percent ?? 0),
-			resetAt: item.weekly_end_time,
-		});
-	}
 
-	return { provider: "minimax-cn", title: "MiniMax CN", windows };
+		if (!res.ok || Number(body?.base_resp?.status_code) !== 0 || !Array.isArray(body?.model_remains)) {
+			return {
+				provider,
+				title,
+				windows: [],
+				error: requestFailedError(res.status, body?.base_resp?.status_msg ? `: ${body.base_resp.status_msg}` : ""),
+			};
+		}
+
+		const windows: UsageWindow[] = [];
+		for (const item of body.model_remains) {
+			const name = item.model_name || "general";
+			windows.push({
+				label: `${name} 5h`,
+				usedPercent: 100 - (item.current_interval_remaining_percent ?? 0),
+				resetAt: item.end_time,
+			});
+			windows.push({
+				label: `${name} week`,
+				usedPercent: 100 - (item.current_weekly_remaining_percent ?? 0),
+				resetAt: item.weekly_end_time,
+			});
+		}
+
+		return { provider, title, windows };
+	} catch (error) {
+		return { provider, title, windows: [], error: requestExceptionError(error) };
+	}
 }
 
 // 统一窗口排序约定：重置时间越早（短窗口，如 5h）越靠前，长窗口（week/month）在后。

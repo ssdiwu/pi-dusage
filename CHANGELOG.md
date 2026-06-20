@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.3] - 2026-06-20
+
+### Fixed
+- `/dusage` 遇到单个 provider 请求超时或网络异常时，不再整条命令失败；改为在该 provider 内显示错误，并继续展示其余 provider 结果。
+- 为请求超时与请求异常补充单独文案，避免向用户直接暴露 `This operation was aborted` 这类底层错误。
+
+### Changed
+- 包名调整为 `@diwu507/pi-dusage`，避开 npm 对近似未作用域包名的发布拦截。
+- 补齐 `tsconfig.json`（TypeScript 配置），使 `npm run check` 可作为稳定的发布前校验命令使用。
+
 ## [0.0.2] - 2026-06-19
 
 ### Added

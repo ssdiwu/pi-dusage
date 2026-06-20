@@ -1,6 +1,6 @@
 {
-  "name": "pi-dusage",
-  "version": "0.0.2",
+  "name": "@diwu507/pi-dusage",
+  "version": "0.0.3",
   "description": "Pi extension package for provider quota checks across Codex, z.ai Coding CN, and MiniMax CN.",
   "type": "module",
   "keywords": [
@@ -19,10 +19,11 @@
     "index.ts",
     "README.md",
     "doc",
-    "AGENTS.md"
+    "AGENTS.md",
+    "tsconfig.json"
   ],
   "scripts": {
-    "check": "tsc --noEmit"
+    "check": "tsc -p tsconfig.json"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
