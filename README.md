@@ -64,6 +64,26 @@
 
 ## 安装
 
+### 通过 npm 安装（推荐）
+
+```bash
+pi install npm:@diwu507/pi-dusage
+```
+
+安装后在 Pi 中执行：
+
+```text
+/reload
+```
+
+也可以直接把包名加入 `~/.pi/agent/settings.json` 的 `packages`：
+
+```json
+"npm:@diwu507/pi-dusage"
+```
+
+### 本地开发安装
+
 把本仓库路径加入 `~/.pi/agent/settings.json` 的 `packages`：
 
 ```json
