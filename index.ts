@@ -21,6 +21,7 @@ type ProviderUsage = {
 type CodexCred = {
 	access?: string;
 	accountId?: string;
+	expires?: number;
 };
 
 type KeyCred = {
@@ -53,6 +54,7 @@ const DUSAGE_MESSAGES: Record<string, Record<string, string>> = {
 		fetching: "Fetching usage…",
 		noData: "no data",
 		noCredCodex: "openai-codex credentials not configured",
+		codexExpired: "access token expired — use codex in pi to refresh",
 		noCredZai: "zai-coding-cn credentials not configured",
 		noCredMinimax: "minimax-cn credentials not configured",
 		requestFailed: "request failed HTTP {status}{detail}",
@@ -68,6 +70,7 @@ const DUSAGE_MESSAGES: Record<string, Record<string, string>> = {
 		fetching: "正在获取用量…",
 		noData: "无数据",
 		noCredCodex: "未配置 openai-codex 凭据",
+		codexExpired: "access 令牌已过期，请在 Pi 中使用 codex 发一句话触发续期",
 		noCredZai: "未配置 zai-coding-cn 凭据",
 		noCredMinimax: "未配置 minimax-cn 凭据",
 		requestFailed: "请求失败 HTTP {status}{detail}",
@@ -272,6 +275,12 @@ async function getCodexUsage(auth: Record<string, any>): Promise<ProviderUsage> 
 	const cred = (auth[provider] ?? {}) as CodexCred;
 	if (!cred.access) {
 		return { provider, title, windows: [], error: { key: "dusage.noCredCodex" } };
+	}
+	// access 过期时直接给出可操作提示，不发请求。
+	// 不在此处刷新——续期是 Pi 主程序在用 codex 跑请求时的职责（边界：不改用户凭据）。
+	// expires 是 Pi 写入的 ms 时间戳（Date.now() + expires_in * 1000）。
+	if (cred.expires && Number(cred.expires) <= Date.now()) {
+		return { provider, title, windows: [], error: { key: "dusage.codexExpired" } };
 	}
 
 	const headers: Record<string, string> = {

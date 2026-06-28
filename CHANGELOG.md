@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.0] - 2026-06-29
+
+### Added
+- `openai-codex` 的 `access` 令牌过期时，`/dusage` 不再发请求拿到冰冷的 401，改为直接显示可操作提示（引导在 Pi 中使用 codex 发一句话触发自动续期）。扩展不自行刷新令牌，避免与 Pi 主程序的凭据管理冲突。
+
 ## [0.0.3] - 2026-06-20
 
 ### Fixed
