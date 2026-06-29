@@ -38,10 +38,10 @@ pi-dusage/
 
 ## 验证
 
-改动后至少执行：
+改动后至少执行（需先将本仓库作为本地 package 加入 `~/.pi/agent/settings.json`，本地路径直接读源码，改完即时生效）：
 
 ```bash
-PI_SKIP_VERSION_CHECK=1 pi --no-extensions --extension ./index.ts --no-session -p "/dusage"
+PI_SKIP_VERSION_CHECK=1 pi --no-session -p "/dusage"
 ```
 
 ## 发版流程

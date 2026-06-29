@@ -87,7 +87,7 @@ pi install npm:@diwu507/pi-dusage
 把本仓库路径加入 `~/.pi/agent/settings.json` 的 `packages`：
 
 ```json
-"../../Documents/Codes/Githubs/pi-dusage"
+"/Users/diwu/Workspace/Codes/Githubs/pi-dusage"
 ```
 
 然后在 Pi 中执行：
@@ -98,7 +98,8 @@ pi install npm:@diwu507/pi-dusage
 
 ## 开发验证
 
+需先将本仓库按「本地开发安装」加入 `~/.pi/agent/settings.json` 的 `packages`（本地路径直接读源码 `index.ts`，改完即时生效，无需重新安装）：
+
 ```bash
-cd /Users/diwu/Documents/Codes/Githubs/pi-dusage
-PI_SKIP_VERSION_CHECK=1 pi --no-extensions --extension ./index.ts --no-session -p "/dusage"
+PI_SKIP_VERSION_CHECK=1 pi --no-session -p "/dusage"
 ```
