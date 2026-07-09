@@ -50,7 +50,9 @@
 
 - 不显示明文 token（令牌）或 key（密钥）
 - 只显示可理解的窗口、百分比、重置时间
-- `zai-coding-cn` 和 `minimax-cn` 保留 provider 原始字段语义，不强行假设所有窗口都等价于“5h + 周”
+- `openai-codex` 除通用额度外，也展示服务端 `additional_rate_limits` 返回的独立额度卡片；卡片标题使用 API 返回的名称，不硬编码模型版本
+- `zai-coding-cn` 保留 provider 原始字段语义，不强行假设所有窗口都等价于“5h + 周”
+- `minimax-cn` 只展示服务端 `general` 类别的 5 小时与周窗口；不将 `video` 等多模态分类误导为独立套餐额度
 - 窗口排序：统一按重置时间升序，短窗口（如 5h）在上、长窗口（week / month）在下，不依赖各 provider API 的返回顺序
 - 用量条语义：进度条表示「剩余配额」——剩余越多填充越满且越绿，将耗尽时变红；右侧仍显示可使用量百分比
 - 单个 provider 请求超时或失败时，只在该 provider 卡片内显示错误，不中断其余 provider 的结果展示

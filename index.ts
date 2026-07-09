@@ -269,18 +269,44 @@ function codexSecondaryLabel(limitWindowSeconds: number | undefined): string {
 	return `${hours}h`;
 }
 
-async function getCodexUsage(auth: Record<string, any>): Promise<ProviderUsage> {
+function codexWindows(rateLimit: any): UsageWindow[] {
+	const windows: UsageWindow[] = [];
+	const primary = rateLimit?.primary_window;
+	if (primary) windows.push({ label: "5h", usedPercent: primary.used_percent ?? 0, resetAt: primary.reset_at });
+	const secondary = rateLimit?.secondary_window;
+	if (secondary) {
+		windows.push({
+			label: codexSecondaryLabel(secondary.limit_window_seconds),
+			usedPercent: secondary.used_percent ?? 0,
+			resetAt: secondary.reset_at,
+		});
+	}
+	return windows;
+}
+
+function codexAdditionalUsage(limit: any, index: number): ProviderUsage | null {
+	const title = typeof limit?.limit_name === "string" ? limit.limit_name.trim() : "";
+	if (!title || !limit?.rate_limit) return null;
+	const feature = typeof limit.metered_feature === "string" && limit.metered_feature ? limit.metered_feature : String(index);
+	return {
+		provider: `openai-codex:${feature}`,
+		title,
+		windows: codexWindows(limit.rate_limit),
+	};
+}
+
+async function getCodexUsages(auth: Record<string, any>): Promise<ProviderUsage[]> {
 	const provider = "openai-codex";
 	const title = "Codex";
 	const cred = (auth[provider] ?? {}) as CodexCred;
 	if (!cred.access) {
-		return { provider, title, windows: [], error: { key: "dusage.noCredCodex" } };
+		return [{ provider, title, windows: [], error: { key: "dusage.noCredCodex" } }];
 	}
 	// access 过期时直接给出可操作提示，不发请求。
 	// 不在此处刷新——续期是 Pi 主程序在用 codex 跑请求时的职责（边界：不改用户凭据）。
 	// expires 是 Pi 写入的 ms 时间戳（Date.now() + expires_in * 1000）。
 	if (cred.expires && Number(cred.expires) <= Date.now()) {
-		return { provider, title, windows: [], error: { key: "dusage.codexExpired" } };
+		return [{ provider, title, windows: [], error: { key: "dusage.codexExpired" } }];
 	}
 
 	const headers: Record<string, string> = {
@@ -293,29 +319,27 @@ async function getCodexUsage(auth: Record<string, any>): Promise<ProviderUsage> 
 	try {
 		const { res, body } = await fetchJson("https://chatgpt.com/backend-api/wham/usage", { headers });
 		if (!res.ok || !body?.rate_limit) {
-			return {
+			return [{
 				provider,
 				title,
 				windows: [],
 				error: requestFailedError(res.status, body?.error?.message ? `: ${body.error.message}` : ""),
-			};
+			}];
 		}
 
-		const windows: UsageWindow[] = [];
-		const primary = body.rate_limit.primary_window;
-		if (primary) windows.push({ label: "5h", usedPercent: primary.used_percent ?? 0, resetAt: primary.reset_at });
-		const secondary = body.rate_limit.secondary_window;
-		if (secondary) {
-			windows.push({
-				label: codexSecondaryLabel(secondary.limit_window_seconds),
-				usedPercent: secondary.used_percent ?? 0,
-				resetAt: secondary.reset_at,
-			});
+		const usages: ProviderUsage[] = [{
+			provider,
+			title,
+			plan: body.plan_type || undefined,
+			windows: codexWindows(body.rate_limit),
+		}];
+		for (const [index, limit] of (Array.isArray(body.additional_rate_limits) ? body.additional_rate_limits : []).entries()) {
+			const usage = codexAdditionalUsage(limit, index);
+			if (usage) usages.push(usage);
 		}
-
-		return { provider, title, plan: body.plan_type || undefined, windows };
+		return usages;
 	} catch (error) {
-		return { provider, title, windows: [], error: requestExceptionError(error) };
+		return [{ provider, title, windows: [], error: requestExceptionError(error) }];
 	}
 }
 
@@ -391,14 +415,15 @@ async function getMinimaxUsage(auth: Record<string, any>): Promise<ProviderUsage
 
 		const windows: UsageWindow[] = [];
 		for (const item of body.model_remains) {
-			const name = item.model_name || "general";
+			// MiniMax Token Plan 的主用量只展示服务端 general 类别；其他多模态分类不作为独立套餐展示。
+			if (item.model_name !== "general") continue;
 			windows.push({
-				label: `${name} 5h`,
+				label: "general 5h",
 				usedPercent: 100 - (item.current_interval_remaining_percent ?? 0),
 				resetAt: item.end_time,
 			});
 			windows.push({
-				label: `${name} week`,
+				label: "general week",
 				usedPercent: 100 - (item.current_weekly_remaining_percent ?? 0),
 				resetAt: item.weekly_end_time,
 			});
@@ -425,7 +450,8 @@ function sortWindowsByReset(windows: UsageWindow[]): UsageWindow[] {
 
 async function collectUsages(): Promise<ProviderUsage[]> {
 	const auth = readAuth();
-	const usages = await Promise.all([getCodexUsage(auth), getZaiUsage(auth), getMinimaxUsage(auth)]);
+	const [codexUsages, zaiUsage, minimaxUsage] = await Promise.all([getCodexUsages(auth), getZaiUsage(auth), getMinimaxUsage(auth)]);
+	const usages = [...codexUsages, zaiUsage, minimaxUsage];
 	for (const usage of usages) sortWindowsByReset(usage.windows);
 	return usages;
 }

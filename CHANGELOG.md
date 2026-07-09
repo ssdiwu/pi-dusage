@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-07-10
+
+### Added
+- `/dusage` 现在会把 Codex 服务端返回的额外限额单独显示为卡片；名称随服务端返回的模型名称变化。
+
+### Changed
+- MiniMax CN 仅显示通用 `general` 额度，不再把 `video` 等多模态分类误导为独立套餐额度。
+
 ## [0.1.0] - 2026-06-29
 
 ### Added
