@@ -129,11 +129,19 @@ class DusageI18n {
 	private api: I18nApi | null = null;
 	private localLocale = detectLocaleFromEnv();
 	private listeners = new Set<() => void>();
+	private unsubscribeLocale?: () => void;
 
 	setApi(api: I18nApi | null): void {
 		const prev = this.api;
+		if (api === prev) return;
+		try {
+			this.unsubscribeLocale?.();
+		} catch {
+			// Ignore cleanup failures from an optional i18n provider.
+		}
+		this.unsubscribeLocale = undefined;
 		this.api = api;
-		if (api && api !== prev) {
+		if (api) {
 			for (const [locale, messages] of Object.entries(DUSAGE_MESSAGES)) {
 				try {
 					api.registerBundle?.({ version: 1, namespace: "dusage", locale, messages });
@@ -142,7 +150,7 @@ class DusageI18n {
 				}
 			}
 			try {
-				api.onLocaleChanged?.(() => {
+				this.unsubscribeLocale = api.onLocaleChanged?.(() => {
 					for (const cb of this.listeners) cb();
 				});
 			} catch {
@@ -203,11 +211,22 @@ function requestI18nApi(pi: ExtensionAPI, timeoutMs = 1500): Promise<I18nApi | n
 }
 
 let i18nEnsurePromise: Promise<void> | null = null;
+let i18nGeneration = 0;
+function resetI18n(): void {
+	i18nGeneration += 1;
+	i18n.setApi(null);
+	i18nEnsurePromise = null;
+}
+
 // 确保只请求一次 I18nApi；session_start 与 command handler 复用同一 promise，
 // 使 --no-session 等不触发 session_start 的场景也能正确接入 pi-di18n。
 function ensureI18n(pi: ExtensionAPI): Promise<void> {
 	if (!i18nEnsurePromise) {
-		i18nEnsurePromise = (async () => i18n.setApi(await requestI18nApi(pi)))();
+		const generation = i18nGeneration;
+		i18nEnsurePromise = (async () => {
+			const api = await requestI18nApi(pi);
+			if (generation === i18nGeneration) i18n.setApi(api);
+		})();
 	}
 	return i18nEnsurePromise;
 }
@@ -243,6 +262,12 @@ function formatTimestamp(value: number | string | undefined): string {
 	const date = new Date(resetToMs(value));
 	if (Number.isNaN(date.getTime())) return String(value);
 	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function safeResetAt(value: unknown): number | string | undefined {
+	if (typeof value === "number" && Number.isFinite(value)) return value;
+	if (typeof value === "string") return value;
+	return undefined;
 }
 
 function formatTextReport(usages: ProviderUsage[]): string {
@@ -305,14 +330,14 @@ function codexSecondaryLabel(limitWindowSeconds: number | undefined): string {
 function codexWindows(rateLimit: any): UsageWindow[] {
 	const windows: UsageWindow[] = [];
 	const primary = rateLimit?.primary_window;
-	if (primary) windows.push({ id: "5h", label: "5h", usedPercent: primary.used_percent ?? 0, resetAt: primary.reset_at });
+	if (primary) windows.push({ id: "5h", label: "5h", usedPercent: primary.used_percent ?? 0, resetAt: safeResetAt(primary.reset_at) });
 	const secondary = rateLimit?.secondary_window;
 	if (secondary) {
 		windows.push({
 			id: "secondary",
 			label: codexSecondaryLabel(secondary.limit_window_seconds),
 			usedPercent: secondary.used_percent ?? 0,
-			resetAt: secondary.reset_at,
+			resetAt: safeResetAt(secondary.reset_at),
 		});
 	}
 	return windows;
@@ -320,8 +345,8 @@ function codexWindows(rateLimit: any): UsageWindow[] {
 
 function codexAdditionalUsage(limit: any): ProviderUsage | null {
 	const title = typeof limit?.limit_name === "string" ? limit.limit_name.trim() : "";
-	if (!title || !limit?.rate_limit) return null;
-	const feature = typeof limit.metered_feature === "string" && limit.metered_feature ? limit.metered_feature : title;
+	const feature = typeof limit.metered_feature === "string" ? limit.metered_feature.trim() : "";
+	if (!title || !feature || !limit?.rate_limit) return null;
 	return {
 		provider: `openai-codex:${feature}`,
 		title,
@@ -364,7 +389,7 @@ async function getCodexUsages(auth: Record<string, any>): Promise<ProviderUsage[
 		const usages: ProviderUsage[] = [{
 			provider,
 			title,
-			plan: body.plan_type || undefined,
+			plan: typeof body.plan_type === "string" ? body.plan_type : undefined,
 			windows: codexWindows(body.rate_limit),
 		}];
 		for (const limit of Array.isArray(body.additional_rate_limits) ? body.additional_rate_limits : []) {
@@ -426,11 +451,11 @@ async function getZaiUsage(auth: Record<string, any>): Promise<ProviderUsage> {
 				id,
 				label: zaiWindowLabel(limit),
 				usedPercent: limit.percentage ?? 0,
-				resetAt: limit.nextResetTime,
+				resetAt: safeResetAt(limit.nextResetTime),
 			});
 		}
 
-		return { provider, title, plan: body.data.level || undefined, windows };
+		return { provider, title, plan: typeof body.data.level === "string" ? body.data.level : undefined, windows };
 	} catch (error) {
 		return { provider, title, windows: [], error: requestExceptionError(error) };
 	}
@@ -463,22 +488,25 @@ async function getMinimaxUsage(auth: Record<string, any>): Promise<ProviderUsage
 		}
 
 		const windows: UsageWindow[] = [];
-		let generalAdded = false;
+		const seenGeneralIds = new Set<string>();
 		for (const item of body.model_remains) {
 			// MiniMax Token Plan 的主用量只展示服务端 general 类别；其他多模态分类不作为独立套餐展示。
-			if (item.model_name !== "general" || generalAdded) continue;
-			generalAdded = true;
+			if (item.model_name !== "general") continue;
+			const groupId = String(item.id ?? item.model_id ?? item.model_name);
+			if (seenGeneralIds.has(groupId)) continue;
+			seenGeneralIds.add(groupId);
+			const windowPrefix = groupId === "general" ? "general" : `general-${groupId}`;
 			windows.push({
-				id: "general-5h",
+				id: `${windowPrefix}-5h`,
 				label: "general 5h",
 				usedPercent: 100 - (item.current_interval_remaining_percent ?? 0),
-				resetAt: item.end_time,
+				resetAt: safeResetAt(item.end_time),
 			});
 			windows.push({
-				id: "general-week",
+				id: `${windowPrefix}-week`,
 				label: "general week",
 				usedPercent: 100 - (item.current_weekly_remaining_percent ?? 0),
-				resetAt: item.weekly_end_time,
+				resetAt: safeResetAt(item.weekly_end_time),
 			});
 		}
 
@@ -673,6 +701,14 @@ class UsageOverlay {
 	private loader: Loader;
 	private unsubI18n?: () => void;
 
+	private requestRender(): void {
+		try {
+			this.tui.requestRender();
+		} catch {
+			// A disposed or failing TUI must not reject refresh work.
+		}
+	}
+
 	constructor(
 		private tui: { requestRender: () => void },
 		private theme: any,
@@ -688,7 +724,7 @@ class UsageOverlay {
 			(s: string) => this.theme.fg("muted", s),
 			i18n.t("dusage.fetching"),
 		);
-		this.unsubI18n = i18n.onChange(() => this.tui.requestRender());
+		this.unsubI18n = i18n.onChange(() => this.requestRender());
 	}
 
 	private severityColor(remainingPercent: number): "success" | "warning" | "error" {
@@ -707,14 +743,14 @@ class UsageOverlay {
 	async refresh(): Promise<void> {
 		this.loading = true;
 		this.error = null;
-		this.tui.requestRender();
+		this.requestRender();
 		try {
 			this.usages = await this.refreshData();
 		} catch {
 			this.error = i18n.t("dusage.requestError", { detail: "" });
 		} finally {
 			this.loading = false;
-			this.tui.requestRender();
+			this.requestRender();
 		}
 	}
 
@@ -860,6 +896,7 @@ export default function dusageExtension(pi: ExtensionAPI) {
 	pi.on("session_shutdown", () => {
 		stopDusageSession(runtime);
 		unsubscribeEvents?.();
+		resetI18n();
 	});
 	pi.registerCommand("dusage", {
 		description: "Show quota usage for Codex, z.ai Coding CN, and MiniMax CN.",

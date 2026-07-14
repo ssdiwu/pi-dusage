@@ -13,7 +13,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - TUI Overlay 渲染失败时回退为可读的纯文本额度结果；provider 错误详情不再直接透出到展示文本。
-- 结构化 quota 的 provider/window 标识不再依赖返回顺序，并避免 MiniMax 重复窗口标识。
+- 防止 Overlay 刷新、i18n listener 和 session shutdown 之间的异常与竞态；结构化 quota 的 provider/window 标识不再依赖返回顺序。
+- MiniMax 在有稳定记录标识时保留独立 general 额度，避免重复窗口标识。
 
 ## [0.2.0] - 2026-07-10
 
