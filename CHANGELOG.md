@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- 新增版本化 `pi-dusage/updated` quota 快照事件，以及 `pi-dusage/subscribe` / `pi-dusage/unsubscribe` 消费者协议。
+- 新增会话启动立即刷新、60 秒轮询、并发请求合并和安全的 Footer 文本回退。
+
+### Changed
+- `pi-dusage` 不接管自定义 Footer；有结构化消费者时清除原生 `dusage` status，无消费者时持续提供回退文本。
+
+### Fixed
+- TUI Overlay 渲染失败时回退为可读的纯文本额度结果；provider 错误详情不再直接透出到展示文本。
+- 结构化 quota 的 provider/window 标识不再依赖返回顺序，并避免 MiniMax 重复窗口标识。
+
 ## [0.2.0] - 2026-07-10
 
 ### Added

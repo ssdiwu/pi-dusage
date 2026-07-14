@@ -23,7 +23,7 @@ pi-dusage/
 ## 代码边界
 
 - 第一版只支持 3 个 provider：`openai-codex`、`zai-coding-cn`、`minimax-cn`。
-- 只做 slash command（斜杠命令）`/dusage`，不做 footer（页脚）常驻展示。
+- 只做 slash command（斜杠命令）`/dusage`，不实现自定义 Footer（页脚）组件；无结构化消费者时仅通过 `ctx.ui.setStatus("dusage", ...)` 提供原生文本回退。
 - TUI 模式使用自绘 overlay（覆盖层）展示进度条样式；非 TUI 模式保持纯文本输出。
 - 只读取本机已有 `auth.json`，不新增登录流程，不改用户凭据。
 - 只显示额度信息，不显示服务状态页告警。

@@ -13,9 +13,11 @@
 不包含：
 
 - `volcengine-ark-coding`
-- footer（页脚）常驻显示
+- 自定义 Footer（页脚）组件（不调用 `ctx.ui.setFooter()`）
 - 自定义登录流程
 - 服务状态页告警
+
+`pi-dusage` 会保留 Pi 原生 Footer 的 `setStatus("dusage", ...)` 文本回退；安装 `pi-dstatus` 后，由订阅者清除该回退并负责视觉展示。
 
 ## 命令
 
@@ -56,6 +58,18 @@
 - 窗口排序：统一按重置时间升序，短窗口（如 5h）在上、长窗口（week / month）在下，不依赖各 provider API 的返回顺序
 - 用量条语义：进度条表示「剩余配额」——剩余越多填充越满且越绿，将耗尽时变红；右侧仍显示可使用量百分比
 - 单个 provider 请求超时或失败时，只在该 provider 卡片内显示错误，不中断其余 provider 的结果展示
+
+## 结构化 quota 事件
+
+`pi-dusage` 通过 Pi 事件总线提供给其他扩展消费的结构化快照：
+
+- `pi-dusage/subscribe` / `pi-dusage/unsubscribe`：载荷为 `{ version: 1, consumerId: string }`，消费者按稳定 `consumerId` 幂等管理。
+- `pi-dusage/updated`：发布 `DUsageSnapshot`，包含版本、抓取时间、provider、窗口剩余百分比和安全错误信息；不包含 token、key 或认证对象。
+- 会话启动立即查询并开始 60 秒刷新；无订阅者时仍持续刷新。
+- 首个消费者订阅时清除 `dusage` status，最后一个消费者取消后恢复最近可用额度；全部失败且曾成功时标记为 stale，从未成功则隐藏 status。
+- 单个 provider 失败不会阻断完整快照发布；并发刷新会复用进行中的请求。
+
+`pi-dusage` 不调用 `ctx.ui.setFooter()`；`pi-dstatus` 可据此独占 Footer 视觉展示。
 
 ## 国际化
 
