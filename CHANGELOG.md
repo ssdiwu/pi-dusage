@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - 新增版本化 `pi-dusage/updated` quota 快照事件，以及 `pi-dusage/subscribe` / `pi-dusage/unsubscribe` 消费者协议。
 - 新增会话启动立即刷新、60 秒轮询、并发请求合并和安全的 Footer 文本回退。
+- 新增 `pi-dfast/updated` 适配：Fast Mode 对当前 Codex 模型变为活动时立即合并刷新 quota，重复快照不产生额外请求。
 
 ### Changed
 - `pi-dusage` 不接管自定义 Footer；有结构化消费者时清除原生 `dusage` status，无消费者时持续提供回退文本。

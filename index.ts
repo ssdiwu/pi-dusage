@@ -50,6 +50,14 @@ type DUsageSubscription = {
 	consumerId: string;
 };
 
+type DFastSnapshot = {
+	version: 1;
+	enabled: boolean;
+	active: boolean;
+	provider?: string;
+	model?: string;
+};
+
 type CodexCred = {
 	access?: string;
 	accountId?: string;
@@ -588,7 +596,31 @@ type DusageRuntime = {
 	latestUsages: ProviderUsage[] | null;
 	latestSnapshot: DUsageSnapshot | null;
 	lastSuccessfulSnapshot: DUsageSnapshot | null;
+	lastFastSignature: string | null;
 };
+
+export function parseDFastSnapshot(value: unknown): DFastSnapshot | null {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+	const snapshot = value as Partial<DFastSnapshot>;
+	if (snapshot.version !== 1 || typeof snapshot.enabled !== "boolean" || typeof snapshot.active !== "boolean") return null;
+	if (snapshot.provider !== undefined && typeof snapshot.provider !== "string") return null;
+	if (snapshot.model !== undefined && typeof snapshot.model !== "string") return null;
+	return {
+		version: 1,
+		enabled: snapshot.enabled,
+		active: snapshot.active,
+		...(snapshot.provider ? { provider: snapshot.provider } : {}),
+		...(snapshot.model ? { model: snapshot.model } : {}),
+	};
+}
+
+export function dfastRefreshSignature(snapshot: DFastSnapshot): string {
+	return [snapshot.enabled, snapshot.active, snapshot.provider ?? "", snapshot.model ?? ""].join(":");
+}
+
+export function shouldRefreshForDFast(snapshot: DFastSnapshot): boolean {
+	return snapshot.enabled && snapshot.active && snapshot.provider === "openai-codex";
+}
 
 function hasSuccessfulUsage(snapshot: DUsageSnapshot): boolean {
 	return snapshot.providers.some((provider) => provider.windows.length > 0);
@@ -669,6 +701,7 @@ function startDusageSession(runtime: DusageRuntime, pi: ExtensionAPI, ctx: Dusag
 	runtime.latestUsages = null;
 	runtime.latestSnapshot = null;
 	runtime.lastSuccessfulSnapshot = null;
+	runtime.lastFastSignature = null;
 	runtime.inFlight = null;
 	if (runtime.timer) clearInterval(runtime.timer);
 	void refreshDusage(runtime, pi);
@@ -685,6 +718,7 @@ function stopDusageSession(runtime: DusageRuntime): void {
 	runtime.latestUsages = null;
 	runtime.latestSnapshot = null;
 	runtime.lastSuccessfulSnapshot = null;
+	runtime.lastFastSignature = null;
 }
 
 function parseSubscription(data: unknown): DUsageSubscription | null {
@@ -852,31 +886,42 @@ export default function dusageExtension(pi: ExtensionAPI) {
 		latestUsages: null,
 		latestSnapshot: null,
 		lastSuccessfulSnapshot: null,
-		active: true,
+		lastFastSignature: null,
+		active: false,
 	};
 
 	let unsubscribeEvents: (() => void) | undefined;
 	const attachEventListeners = () => {
 		if (unsubscribeEvents) return;
 		const unsubscribeSubscribe = pi.events.on("pi-dusage/subscribe", (data) => {
-			if (!runtime.active) return;
 			const subscription = parseSubscription(data);
 			if (!subscription) return;
 			const wasEmpty = runtime.consumers.size === 0;
 			runtime.consumers.add(subscription.consumerId);
-			if (wasEmpty) setDusageStatus(runtime, undefined);
-			void refreshDusage(runtime, pi);
+			if (runtime.active) {
+				if (wasEmpty) setDusageStatus(runtime, undefined);
+				void refreshDusage(runtime, pi);
+			}
 		});
 		const unsubscribeUnsubscribe = pi.events.on("pi-dusage/unsubscribe", (data) => {
-			if (!runtime.active) return;
 			const subscription = parseSubscription(data);
 			if (!subscription) return;
 			runtime.consumers.delete(subscription.consumerId);
-			if (runtime.consumers.size === 0) updateFallbackStatus(runtime);
+			if (runtime.active && runtime.consumers.size === 0) updateFallbackStatus(runtime);
+		});
+		const unsubscribeDFast = pi.events.on("pi-dfast/updated", (data) => {
+			if (!runtime.active) return;
+			const snapshot = parseDFastSnapshot(data);
+			if (!snapshot) return;
+			const signature = dfastRefreshSignature(snapshot);
+			if (signature === runtime.lastFastSignature) return;
+			runtime.lastFastSignature = signature;
+			if (shouldRefreshForDFast(snapshot)) void refreshDusage(runtime, pi);
 		});
 		unsubscribeEvents = () => {
 			unsubscribeSubscribe();
 			unsubscribeUnsubscribe();
+			unsubscribeDFast();
 			unsubscribeEvents = undefined;
 		};
 	};

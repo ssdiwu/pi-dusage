@@ -19,3 +19,7 @@
 `index.ts` 还通过 Pi 事件总线发布 `pi-dusage/updated`，供 `pi-dstatus` 等扩展消费 `DUsageSnapshot`。订阅事件为 `pi-dusage/subscribe` 与 `pi-dusage/unsubscribe`，载荷使用 `version: 1` 和稳定 `consumerId`。
 
 `pi-dusage` 在 `session_start` 立即查询并持续每 60 秒刷新，无消费者时也不停止；订阅会触发一次并发合并后的立即刷新。它只使用 `ctx.ui.setStatus("dusage", ...)` 提供原生 Footer 文本回退，不调用 `ctx.ui.setFooter()`。
+
+## Fast Mode 适配
+
+`pi-dusage` 可选消费 `pi-dfast/updated` 版本化快照。Fast Mode 对当前 `openai-codex` 模型变为活动时触发一次并发合并后的 quota 刷新；它不控制 Fast Mode，也不依赖 `pi-dfast` 的源码或配置文件。

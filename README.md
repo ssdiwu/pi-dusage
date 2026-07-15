@@ -71,6 +71,12 @@
 
 `pi-dusage` 不调用 `ctx.ui.setFooter()`；`pi-dstatus` 可据此独占 Footer 视觉展示。
 
+## Fast Mode 适配
+
+安装 `pi-dfast` 后，`pi-dusage` 会消费公开的 `pi-dfast/updated` 快照。当当前会话的 Fast Mode（快速模式）首次变为对当前 `openai-codex` 模型活动，或活动模型发生变化时，立即合并触发一次 quota 刷新；重复快照不会产生额外请求。
+
+这条适配只缩短 Fast quota（快速配额）状态进入用量快照的等待时间：`pi-dusage` 不读取 `pi-dfast` 私有配置，也不控制 Fast Mode。
+
 ## 国际化
 
 所有可见文案通过 pi-di18n 的 `pi-i18n/requestApi` 事件接入多语言，内置 `en` 与 `zh-CN` 两套文案：
