@@ -68,6 +68,12 @@ type KeyCred = {
 	key?: string;
 };
 
+type OAuthCred = {
+	type?: string;
+	access?: string;
+	expires?: number;
+};
+
 // --- i18n 对接 ---------------------------------------------------------------
 // 通过 pi-di18n 暴露的 `pi-i18n/requestApi` 事件获取 I18nApi；未安装 pi-di18n 时
 // 回退到内置 en/zh-CN 本地查表。所有用户可见文案都走 i18n.t("dusage.*")。
@@ -98,6 +104,8 @@ const DUSAGE_MESSAGES: Record<string, Record<string, string>> = {
 		codexExpired: "access token expired — use codex in pi to refresh",
 		noCredZai: "zai-coding-cn credentials not configured",
 		noCredMinimax: "minimax-cn credentials not configured",
+		noCredXai: "xai OAuth credentials not configured",
+		xaiExpired: "access token expired — use xai in pi to refresh",
 		requestFailed: "request failed HTTP {status}{detail}",
 		requestTimedOut: "request timed out",
 		requestError: "request error{detail}",
@@ -115,6 +123,8 @@ const DUSAGE_MESSAGES: Record<string, Record<string, string>> = {
 		codexExpired: "access 令牌已过期，请在 Pi 中使用 codex 发一句话触发续期",
 		noCredZai: "未配置 zai-coding-cn 凭据",
 		noCredMinimax: "未配置 minimax-cn 凭据",
+		noCredXai: "未配置 xai OAuth 凭据",
+		xaiExpired: "access 令牌已过期，请在 Pi 中使用 xai 发一句话触发续期",
 		requestFailed: "请求失败 HTTP {status}{detail}",
 		requestTimedOut: "请求超时",
 		requestError: "请求异常{detail}",
@@ -524,8 +534,186 @@ async function getMinimaxUsage(auth: Record<string, any>): Promise<ProviderUsage
 	}
 }
 
+// xAI SuperGrok 订阅额度：非公开 cli-chat-proxy 只读路径（与官方 Grok CLI / 社区实现一致）。
+// 当前响应只提供一个 currentPeriod；仅在服务端明确标记为 week 或 5h 时展示，忽略 productUsage。
+const XAI_CLI_PROXY_BASE = "https://cli-chat-proxy.grok.com/v1";
+const XAI_CLIENT_VERSION = "0.2.101";
+const XAI_CLIENT_IDENTIFIER = "grok-shell";
+const XAI_USER_ID_PATTERN = /^[\x21-\x7e]+$/;
+const XAI_MAX_USER_ID_LENGTH = 256;
+const XAI_REQUEST_TIMEOUT_MS = 10_000;
+const XAI_MAX_RESPONSE_BYTES = 64 * 1024;
+
+function xaiPlatformLabel(): string {
+	const os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : process.platform;
+	const arch = process.arch === "arm64" ? "aarch64" : process.arch === "x64" ? "x86_64" : process.arch;
+	return `${os}; ${arch}`;
+}
+
+function xaiProxyHeaders(accessToken: string, extra?: Record<string, string>): Record<string, string> {
+	return {
+		Authorization: `Bearer ${accessToken}`,
+		Accept: "application/json",
+		"User-Agent": `${XAI_CLIENT_IDENTIFIER}/${XAI_CLIENT_VERSION} (${xaiPlatformLabel()})`,
+		"x-grok-client-identifier": XAI_CLIENT_IDENTIFIER,
+		"x-grok-client-version": XAI_CLIENT_VERSION,
+		"x-grok-client-mode": "interactive",
+		"X-XAI-Token-Auth": "xai-grok-cli",
+		"x-authenticateresponse": "authenticate-response",
+		...(extra ?? {}),
+	};
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+	return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+/** 从 /user 响应提取可安全放入 header 的 userId；失败返回 null，不抛出。 */
+export function parseXaiUserId(body: unknown): string | null {
+	const root = asRecord(body);
+	const userId = root?.userId;
+	if (typeof userId !== "string" || !userId || userId.length > XAI_MAX_USER_ID_LENGTH || !XAI_USER_ID_PATTERN.test(userId)) {
+		return null;
+	}
+	return userId;
+}
+
+function xaiClampPercent(value: unknown): number | undefined {
+	if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+	return Math.max(0, Math.min(100, value));
+}
+
+function xaiResetAt(value: unknown): number | undefined {
+	if (typeof value !== "string" || value.length === 0 || value.length > 64) return undefined;
+	const timestamp = Date.parse(value);
+	return Number.isFinite(timestamp) ? timestamp : undefined;
+}
+
+export function xaiCredentialError(
+	cred: OAuthCred,
+	now = Date.now(),
+): "dusage.noCredXai" | "dusage.xaiExpired" | null {
+	if (cred.type !== "oauth" || typeof cred.access !== "string" || !cred.access) return "dusage.noCredXai";
+	const expires = Number(cred.expires);
+	if (cred.expires !== undefined && Number.isFinite(expires) && expires <= now) return "dusage.xaiExpired";
+	return null;
+}
+
+/** 将 proxy 的 period type 映射为 dusage 窗口；只接受 week 与 5h。 */
+export function mapXaiPeriodWindow(
+	type: unknown,
+	usedPercent: number,
+	resetAt: number | string | undefined,
+): UsageWindow | null {
+	if (typeof type !== "string" || !type.trim()) return null;
+	const normalized = type.trim().toUpperCase();
+	const stem = normalized.startsWith("USAGE_PERIOD_TYPE_") ? normalized.slice("USAGE_PERIOD_TYPE_".length) : normalized;
+	if (stem === "WEEKLY" || stem === "WEEK") return { id: "week", label: "week", usedPercent, resetAt };
+	if (stem === "5H" || stem === "FIVE_HOUR" || stem === "FIVE_HOURS" || /(?:^|_)5H(?:_|$)/.test(stem)) {
+		return { id: "5h", label: "5h", usedPercent, resetAt };
+	}
+	return null;
+}
+
+/**
+ * 从 /billing?format=credits 解析当前 week（或服务端明确标记的 5h）窗口。
+ * productUsage、预付费与按需账单不是套餐配额窗口，故刻意忽略。
+ */
+export function parseXaiBillingWindows(body: unknown): { plan?: string; windows: UsageWindow[] } {
+	const root = asRecord(body);
+	if (!root) return { windows: [] };
+	const plan = typeof root.subscriptionTier === "string" && root.subscriptionTier.trim() ? root.subscriptionTier.trim() : undefined;
+	const config = asRecord(root.config);
+	if (!config) return { plan, windows: [] };
+	const period = asRecord(config.currentPeriod);
+	const usedPercent = xaiClampPercent(config.creditUsagePercent);
+	if (usedPercent === undefined) return { plan, windows: [] };
+	const resetAt = xaiResetAt(period?.end) ?? xaiResetAt(config.billingPeriodEnd);
+	const window = mapXaiPeriodWindow(period?.type, usedPercent, resetAt);
+	return { plan, windows: window ? [window] : [] };
+}
+
+async function readXaiResponseText(res: Response, maxBytes: number): Promise<string> {
+	const reader = res.body?.getReader();
+	if (!reader) return "";
+	const chunks: Uint8Array[] = [];
+	let totalBytes = 0;
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			if (!value) continue;
+			totalBytes += value.byteLength;
+			if (totalBytes > maxBytes) {
+				await reader.cancel().catch(() => undefined);
+				throw new Error("xAI response exceeded the safe size limit");
+			}
+			chunks.push(value);
+		}
+	} finally {
+		reader.releaseLock();
+	}
+	const bytes = new Uint8Array(totalBytes);
+	let offset = 0;
+	for (const chunk of chunks) {
+		bytes.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return new TextDecoder().decode(bytes);
+}
+
+async function fetchXaiJson(path: string, accessToken: string, extraHeaders?: Record<string, string>): Promise<{ res: Response; body: unknown }> {
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), XAI_REQUEST_TIMEOUT_MS);
+	try {
+		const res = await fetch(`${XAI_CLI_PROXY_BASE}${path}`, {
+			headers: xaiProxyHeaders(accessToken, extraHeaders),
+			redirect: "manual",
+			signal: controller.signal,
+		});
+		const text = await readXaiResponseText(res, XAI_MAX_RESPONSE_BYTES);
+		if (!text) return { res, body: null };
+		try {
+			return { res, body: JSON.parse(text) };
+		} catch {
+			return { res, body: null };
+		}
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+function xaiRequestError(status: number): NonNullable<ProviderUsage["error"]> {
+	return status === 401 ? { key: "dusage.xaiExpired" } : requestFailedError(status);
+}
+
+async function getXaiUsage(auth: Record<string, any>): Promise<ProviderUsage> {
+	const provider = "xai";
+	const title = "xAI";
+	const cred = (auth[provider] ?? {}) as OAuthCred;
+	const credentialError = xaiCredentialError(cred);
+	if (credentialError) return { provider, title, windows: [], error: { key: credentialError } };
+	const accessToken = cred.access!;
+
+	try {
+		const { res: userRes, body: userBody } = await fetchXaiJson("/user", accessToken);
+		if (!userRes.ok) return { provider, title, windows: [], error: xaiRequestError(userRes.status) };
+		const userId = parseXaiUserId(userBody);
+		if (!userId) return { provider, title, windows: [], error: { key: "dusage.noData" } };
+
+		const { res: billRes, body: billBody } = await fetchXaiJson("/billing?format=credits", accessToken, { "x-userid": userId });
+		if (!billRes.ok) return { provider, title, windows: [], error: xaiRequestError(billRes.status) };
+		const parsed = parseXaiBillingWindows(billBody);
+		return parsed.windows.length > 0
+			? { provider, title, plan: parsed.plan, windows: parsed.windows }
+			: { provider, title, plan: parsed.plan, windows: [], error: { key: "dusage.noData" } };
+	} catch (error) {
+		return { provider, title, windows: [], error: requestExceptionError(error) };
+	}
+}
+
 // 统一窗口排序约定：重置时间越早（短窗口，如 5h）越靠前，长窗口（week/month）在后。
-// 这样三个 provider 的展示顺序一致，且不依赖各 API 的返回顺序。
+// 这样 provider 的展示顺序一致，且不依赖各 API 的返回顺序。
 function sortWindowsByReset(windows: UsageWindow[]): UsageWindow[] {
 	return windows.sort((a, b) => {
 		const da = resetToMs(a.resetAt);
@@ -539,8 +727,13 @@ function sortWindowsByReset(windows: UsageWindow[]): UsageWindow[] {
 
 async function collectUsages(): Promise<ProviderUsage[]> {
 	const auth = readAuth();
-	const [codexUsages, zaiUsage, minimaxUsage] = await Promise.all([getCodexUsages(auth), getZaiUsage(auth), getMinimaxUsage(auth)]);
-	const usages = [...codexUsages, zaiUsage, minimaxUsage];
+	const [codexUsages, zaiUsage, minimaxUsage, xaiUsage] = await Promise.all([
+		getCodexUsages(auth),
+		getZaiUsage(auth),
+		getMinimaxUsage(auth),
+		getXaiUsage(auth),
+	]);
+	const usages = [...codexUsages, zaiUsage, minimaxUsage, xaiUsage];
 	for (const usage of usages) sortWindowsByReset(usage.windows);
 	return usages;
 }
@@ -548,14 +741,15 @@ async function collectUsages(): Promise<ProviderUsage[]> {
 function publicError(usage: ProviderUsage): DUsageError | undefined {
 	if (!usage.error) return undefined;
 	const key = usage.error.key;
-	if (key.endsWith("noCredCodex") || key.endsWith("noCredZai") || key.endsWith("noCredMinimax")) {
+	if (key.endsWith("noCredCodex") || key.endsWith("noCredZai") || key.endsWith("noCredMinimax") || key.endsWith("noCredXai")) {
 		return { code: "credentials_missing", message: i18n.t(key) };
 	}
-	if (key.endsWith("codexExpired")) return { code: "credentials_expired", message: i18n.t(key) };
+	if (key.endsWith("codexExpired") || key.endsWith("xaiExpired")) return { code: "credentials_expired", message: i18n.t(key) };
 	if (key.endsWith("requestTimedOut")) return { code: "timeout", message: i18n.t(key) };
 	if (key.endsWith("requestFailed")) {
 		return { code: "request_failed", message: `HTTP ${String(usage.error.params?.status ?? "unknown")}` };
 	}
+	if (key.endsWith("noData")) return { code: "no_data", message: i18n.t(key) };
 	return { code: "request_error", message: i18n.t("dusage.requestError", { detail: "" }) };
 }
 
@@ -944,7 +1138,7 @@ export default function dusageExtension(pi: ExtensionAPI) {
 		resetI18n();
 	});
 	pi.registerCommand("dusage", {
-		description: "Show quota usage for Codex, z.ai Coding CN, and MiniMax CN.",
+		description: "Show quota usage for Codex, z.ai Coding CN, MiniMax CN, and xAI Grok.",
 		handler: async (_args, ctx) => {
 			await showUsage(ctx, pi, runtime);
 		},

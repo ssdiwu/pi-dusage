@@ -1,0 +1,11 @@
+{
+  "config": {
+    "currentPeriod": {
+      "type": "USAGE_PERIOD_TYPE_MONTHLY",
+      "end": "2026-08-31T00:00:00Z"
+    },
+    "productUsage": [
+      { "product": "GrokBuild", "usagePercent": 42 }
+    ]
+  }
+}

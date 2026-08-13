@@ -1,7 +1,7 @@
 {
   "name": "@diwu507/pi-dusage",
   "version": "0.2.0",
-  "description": "Pi extension package for provider quota checks across Codex, z.ai Coding CN, and MiniMax CN.",
+  "description": "Pi extension package for provider quota checks across Codex, z.ai Coding CN, MiniMax CN, and xAI Grok.",
   "type": "module",
   "keywords": [
     "pi-package",
@@ -11,7 +11,9 @@
     "quota",
     "codex",
     "zai",
-    "minimax"
+    "minimax",
+    "xai",
+    "grok"
   ],
   "license": "MIT",
   "author": "diwu",

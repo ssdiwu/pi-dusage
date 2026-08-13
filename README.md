@@ -4,11 +4,12 @@
 
 ## 第一版范围
 
-当前只接入 3 个已验证路径：
+当前接入 4 个已验证路径：
 
 - `openai-codex`
 - `zai-coding-cn`
 - `minimax-cn`
+- `xai`（Grok / SuperGrok OAuth）
 
 不包含：
 
@@ -48,6 +49,12 @@
 - 认证：`~/.pi/agent/auth.json` → `minimax-cn`
 - 接口：`https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains`
 
+### `xai`
+- 认证：`~/.pi/agent/auth.json` → `xai`，仅接受 Pi 管理的 OAuth 订阅凭据；不将 API key 账单混入订阅周池
+- 接口：先只读调用 `https://cli-chat-proxy.grok.com/v1/user`，仅在内存中校验 `userId`，再调用 `/billing?format=credits`
+- 范围：只展示服务端明确返回的 `week`；若当前周期明确标记为 `5h` 也会展示；不展示 `productUsage`、预付费或按需账单
+- 边界：该 proxy billing 路径不是公开稳定 API；请求拒绝重定向、设超时与响应体上限，字段变化会安全降级为卡片内错误
+
 ## 输出原则
 
 - 不显示明文 token（令牌）或 key（密钥）
@@ -55,6 +62,7 @@
 - `openai-codex` 除通用额度外，也展示服务端 `additional_rate_limits` 返回的独立额度卡片；卡片标题使用 API 返回的名称，不硬编码模型版本
 - `zai-coding-cn` 保留 provider 原始字段语义，不强行假设所有窗口都等价于“5h + 周”
 - `minimax-cn` 只展示服务端 `general` 类别的 5 小时与周窗口；不将 `video` 等多模态分类误导为独立套餐额度
+- `xai` 只展示 OAuth 订阅统一池的已验证 `week`（或服务端明确的 `5h`）窗口；不把 GrokBuild、GrokChat 等 product 拆分误导成独立配额
 - 窗口排序：统一按重置时间升序，短窗口（如 5h）在上、长窗口（week / month）在下，不依赖各 provider API 的返回顺序
 - 用量条语义：进度条表示「剩余配额」——剩余越多填充越满且越绿，将耗尽时变红；右侧仍显示可使用量百分比
 - 单个 provider 请求超时或失败时，只在该 provider 卡片内显示错误，不中断其余 provider 的结果展示
