@@ -2,6 +2,8 @@
 
 `pi-dusage` 是一个最小的 Pi `extension`（扩展）包，用来查看订阅 / 套餐 provider（提供方）的 quota（配额）使用情况。
 
+本文是本扩展机制规格的唯一正文。文档导航见 [`doc/README.md`](./doc/README.md)，术语见 [`doc/术语表.md`](./doc/术语表.md)。
+
 ## 第一版范围
 
 当前接入 4 个已验证路径：
@@ -117,7 +119,7 @@ pi install npm:@diwu507/pi-dusage
 把本仓库路径加入 `~/.pi/agent/settings.json` 的 `packages`：
 
 ```json
-"/Users/diwu/Workspace/Codes/Githubs/pi-dusage"
+"/Users/diwu/Workspace/Codes/Githubs/pi-extensions/pi-dusage"
 ```
 
 然后在 Pi 中执行：
@@ -133,3 +135,5 @@ pi install npm:@diwu507/pi-dusage
 ```bash
 PI_SKIP_VERSION_CHECK=1 pi --no-session -p "/dusage"
 ```
+
+离线验证（`npm run check`）的证据记录与未覆盖项见 [`doc/references/验证证据台账.md`](./doc/references/验证证据台账.md)。

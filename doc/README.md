@@ -1,25 +1,40 @@
 # pi-dusage 文档入口
 
+本文件只做导航，不承载机制正文。现行机制规格以根 `README.md` 为唯一正文。
+
 ## 阅读地图
 
-- `README.md`：功能边界、命令行为、数据来源、安装与验证。
-- `doc/术语表.md`：项目术语。
-- `index.ts`：Pi 扩展入口与 4 个 provider 的 quota 查询实现。
+| 位置 | 回答什么 | 性质 |
+|---|---|---|
+| [../README.md](../README.md) | 功能边界、`/dusage` 命令行为、数据来源与接口、输出原则、结构化 quota 事件、Fast Mode 适配、国际化、安装与验证命令 | 现行正文（唯一） |
+| [术语表.md](./术语表.md) | 项目术语定义 | 现行正文（唯一） |
+| [references/](./references/) | 来源、验证记录、历史阶段快照；只追溯，不作现行权威 | 证据区 |
+| [../AGENTS.md](../AGENTS.md) | 代理规范：provider 边界、TUI 失败恢复、验证与 Git 约束 | 规范 |
+| [../CHANGELOG.md](../CHANGELOG.md) | 用户可感知版本变化 | 历史 |
 
-## 当前范围
+## 当前状态
 
-第一版只解决一个问题：
+- 根 `PLAN.md`：无。本仓库不维护执行计划正文，当前进展以 `CHANGELOG.md` 与根 `README.md` 为准。
+- 本机原始现场（截图、抓包、原始日志）放仓库根 `.artifacts/`，已被 Git 忽略；引用它不表示文件随仓库分发。
 
-> 在 Pi 里通过 `/dusage` 查看 `openai-codex`、`zai-coding-cn`、`minimax-cn`、`xai` 的额度信息。
+## 决策存放位置
 
-当前 TUI 形态已升级为 overlay（覆盖层）进度条卡片；`openai-codex` 的通用与额外限额分别成卡，`minimax-cn` 只展示通用 `general` 窗口；`xai` 仅用 Pi 管理的 OAuth 订阅凭据查询非公开 CLI proxy billing 路径，并只显示服务端明确的周窗口（或明确的 5h 窗口），不显示 product 拆分。文案通过 pi-di18n 接入多语言（内置 en/zh-CN，未安装时按环境变量回退）。
+本仓库没有 `doc/决策档案/`，也不新增 ADR。难逆转决定目前记在根 `README.md` 的对应正文条目里：
 
-## 结构化 quota 协议
+| 决定 | 所在正文 |
+|---|---|
+| 不用自定义 Footer，由 `pi-dstatus` 接管视觉展示 | [README.md 输出原则 / 结构化 quota 事件](../README.md) |
+| 进度条表示「剩余配额」而非已用量 | [README.md 输出原则](../README.md) |
+| 不把 `productUsage`、`video` 等分类当独立配额 | [README.md 输出原则](../README.md) |
+| Codex `additional_rate_limits` 按服务端返回名称成卡，不硬编码模型版本 | [README.md 输出原则](../README.md) |
+| `xai` 走非公开 CLI proxy billing 路径，只校验 `userId`，拒绝重定向并限制响应体 | [README.md 数据来源 `xai`](../README.md) |
 
-`index.ts` 还通过 Pi 事件总线发布 `pi-dusage/updated`，供 `pi-dstatus` 等扩展消费 `DUsageSnapshot`。订阅事件为 `pi-dusage/subscribe` 与 `pi-dusage/unsubscribe`，载荷使用 `version: 1` 和稳定 `consumerId`。
+是否把它们独立刻碑为 ADR，需要单独定夺；在定夺前不移动、不改写措辞。
 
-`pi-dusage` 在 `session_start` 立即查询并持续每 60 秒刷新，无消费者时也不停止；订阅会触发一次并发合并后的立即刷新。它只使用 `ctx.ui.setStatus("dusage", ...)` 提供原生 Footer 文本回退，不调用 `ctx.ui.setFooter()`。
+## 维护规则
 
-## Fast Mode 适配
-
-`pi-dusage` 可选消费 `pi-dfast/updated` 版本化快照。Fast Mode 对当前 `openai-codex` 模型变为活动时触发一次并发合并后的 quota 刷新；它不控制 Fast Mode，也不依赖 `pi-dfast` 的源码或配置文件。
+- 机制、provider 字段、公开快照、命令、隐私或安装行为变化 → 只更新根 `README.md`。
+- 术语变化 → 只更新 `doc/术语表.md`。
+- 验证记录、来源与历史阶段 → 追加到 `doc/references/`，不改写已归档记录。
+- 用户可感知变化 → `CHANGELOG.md`。
+- 文档结构调整 → 更新本入口的导航，不新写第二份机制正文。
