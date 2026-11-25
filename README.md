@@ -1,139 +1,170 @@
 # pi-dusage
 
-`pi-dusage` 是一个最小的 Pi `extension`（扩展）包，用来查看订阅 / 套餐 provider（提供方）的 quota（配额）使用情况。
+English | [中文](./README-zh.md)
 
-本文是本扩展机制规格的唯一正文。文档导航见 [`doc/README.md`](./doc/README.md)，术语见 [`doc/术语表.md`](./doc/术语表.md)。
+A minimal Pi `extension` (扩展) package for viewing the quota (配额) usage of subscription / plan providers (提供方).
 
-## 第一版范围
+This document is the only body of truth for the mechanism of this extension. The document map is in [`doc/README.md`](./doc/README.md), and the terms are in [`doc/术语表.md`](./doc/术语表.md).
 
-当前接入 4 个已验证路径：
+## First-version scope
+
+Four verified paths are currently covered:
 
 - `openai-codex`
 - `zai-coding-cn`
 - `minimax-cn`
-- `xai`（Grok / SuperGrok OAuth）
+- `xai` (Grok / SuperGrok OAuth)
 
-不包含：
+Not included:
 
 - `volcengine-ark-coding`
-- 自定义 Footer（页脚）组件（不调用 `ctx.ui.setFooter()`）
-- 自定义登录流程
-- 服务状态页告警
+- A custom Footer (页脚) component (it does not call `ctx.ui.setFooter()`)
+- A custom login flow
+- Service-status page alerts
 
-`pi-dusage` 会保留 Pi 原生 Footer 的 `setStatus("dusage", ...)` 文本回退；安装 `pi-dstatus` 后，由订阅者清除该回退并负责视觉展示。
+`pi-dusage` keeps Pi's native footer fallback text via `setStatus("dusage", ...)`; once `pi-dstatus` is installed, the subscriber clears that fallback and owns the visual presentation.
 
-## 命令
+## Command
 
-只注册一个 slash command（斜杠命令）：
+One slash command (斜杠命令) is registered:
 
 ```text
 /dusage
 ```
 
-行为：
+Behavior:
 
-- 在 TUI（终端交互界面）模式下，使用 overlay（覆盖层）面板显示结果，样式接近传统 usage 卡片，并提供：
-  - `r` 刷新
-  - `Esc` 退出
-- 在 `pi -p` 等非 TUI 模式下输出纯文本，便于快速验证。
+- In TUI (terminal interactive UI) mode, results are shown in an overlay (覆盖层) panel whose style is close to the traditional usage card, with:
+  - `r` to refresh
+  - `Esc` to exit
+- In non-TUI modes such as `pi -p`, plain text is printed for quick verification.
 
-## 数据来源
+## Data sources
 
 ### `openai-codex`
-- 认证：`~/.pi/agent/auth.json` → `openai-codex`
-- 接口：`https://chatgpt.com/backend-api/wham/usage`
+- Credentials: `~/.pi/agent/auth.json` → `openai-codex`
+- Endpoint: `https://chatgpt.com/backend-api/wham/usage`
 
 ### `zai-coding-cn`
-- 认证：`~/.pi/agent/auth.json` → `zai-coding-cn`
-- 接口：`https://bigmodel.cn/api/monitor/usage/quota/limit`
+- Credentials: `~/.pi/agent/auth.json` → `zai-coding-cn`
+- Endpoint: `https://bigmodel.cn/api/monitor/usage/quota/limit`
 
 ### `minimax-cn`
-- 认证：`~/.pi/agent/auth.json` → `minimax-cn`
-- 接口：`https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains`
+- Credentials: `~/.pi/agent/auth.json` → `minimax-cn`
+- Endpoint: `https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains`
 
 ### `xai`
-- 认证：`~/.pi/agent/auth.json` → `xai`，仅接受 Pi 管理的 OAuth 订阅凭据；不将 API key 账单混入订阅周池
-- 接口：先只读调用 `https://cli-chat-proxy.grok.com/v1/user`，仅在内存中校验 `userId`，再调用 `/billing?format=credits`
-- 范围：只展示服务端明确返回的 `week`；若当前周期明确标记为 `5h` 也会展示；不展示 `productUsage`、预付费或按需账单
-- 边界：该 proxy billing 路径不是公开稳定 API；请求拒绝重定向、设超时与响应体上限，字段变化会安全降级为卡片内错误
+- Credentials: `~/.pi/agent/auth.json` → `xai`; only Pi-managed OAuth subscription credentials are accepted, and API-key billing is not mixed into the subscription weekly pool.
+- Endpoint: a read-only call to `https://cli-chat-proxy.grok.com/v1/user` validates `userId` in memory only, then `/billing?format=credits` is called.
+- Scope: only the server's explicit `week` is displayed; a `5h` window is also displayed when the current period explicitly marks it. `productUsage`, prepaid and pay-as-you-go billing are not shown.
+- Boundary: this proxy billing path is not a public, stable API; redirects are refused, timeouts and response-body limits are applied, and field changes degrade safely to an in-card error.
 
-## 输出原则
+## Output principles
 
-- 不显示明文 token（令牌）或 key（密钥）
-- 只显示可理解的窗口、百分比、重置时间
-- `openai-codex` 除通用额度外，也展示服务端 `additional_rate_limits` 返回的独立额度卡片；卡片标题使用 API 返回的名称，不硬编码模型版本
-- `zai-coding-cn` 保留 provider 原始字段语义，不强行假设所有窗口都等价于“5h + 周”
-- `minimax-cn` 只展示服务端 `general` 类别的 5 小时与周窗口；不将 `video` 等多模态分类误导为独立套餐额度
-- `xai` 只展示 OAuth 订阅统一池的已验证 `week`（或服务端明确的 `5h`）窗口；不把 GrokBuild、GrokChat 等 product 拆分误导成独立配额
-- 窗口排序：统一按重置时间升序，短窗口（如 5h）在上、长窗口（week / month）在下，不依赖各 provider API 的返回顺序
-- 用量条语义：进度条表示「剩余配额」——剩余越多填充越满且越绿，将耗尽时变红；右侧仍显示可使用量百分比
-- 单个 provider 请求超时或失败时，只在该 provider 卡片内显示错误，不中断其余 provider 的结果展示
+- Plain-text tokens (令牌) and keys (密钥) are never displayed.
+- Only understandable windows, percentages and reset times are displayed.
+- For `openai-codex`, the independent quota cards returned by the server in `additional_rate_limits` are displayed in addition to the general quota; card titles use the names returned by the API and never hardcode a model version.
+- For `zai-coding-cn`, the provider's original field semantics are preserved instead of assuming every window equals "5h + week".
+- For `minimax-cn`, only the server's `general` category 5-hour and weekly windows are shown; multimodal categories such as `video` are not misrepresented as separate plan quotas.
+- For `xai`, only the verified `week` (or an explicit server `5h`) window of the OAuth subscription pool is shown; product splits such as GrokBuild and GrokChat are not misrepresented as separate quotas.
+- Window ordering is unified by ascending reset time, so short windows (such as 5h) come first and long windows (week / month) last, independent of each provider API's response order.
+- Usage-bar semantics: the bar represents the *remaining* quota — the more that remains, the fuller and greener it is, and it turns red as it runs out; the percentage still available is still shown on the right.
+- When a single provider times out or fails, the error is shown only inside that provider's card and does not interrupt the other providers' results.
 
-## 结构化 quota 事件
+## Structured quota events
 
-`pi-dusage` 通过 Pi 事件总线提供给其他扩展消费的结构化快照：
+`pi-dusage` provides a structured snapshot to other extensions through the Pi event bus:
 
-- `pi-dusage/subscribe` / `pi-dusage/unsubscribe`：载荷为 `{ version: 1, consumerId: string }`，消费者按稳定 `consumerId` 幂等管理。
-- `pi-dusage/updated`：发布 `DUsageSnapshot`，包含版本、抓取时间、provider、窗口剩余百分比和安全错误信息；不包含 token、key 或认证对象。
-- 会话启动立即查询并开始 60 秒刷新；无订阅者时仍持续刷新。
-- 首个消费者订阅时清除 `dusage` status，最后一个消费者取消后恢复最近可用额度；全部失败且曾成功时标记为 stale，从未成功则隐藏 status。
-- 单个 provider 失败不会阻断完整快照发布；并发刷新会复用进行中的请求。
+- `pi-dusage/subscribe` / `pi-dusage/unsubscribe`: the payload is `{ version: 1, consumerId: string }`; consumers are managed idempotently by a stable `consumerId`.
+- `pi-dusage/updated`: publishes a `DUsageSnapshot` with the version, fetch time, provider, window remaining percentage and safe error information; it contains no token, key or credential object.
+- Queries start immediately at session start and refresh every 60 seconds; refreshing continues even when there are no subscribers.
+- The `dusage` status is cleared when the first consumer subscribes, and the most recent available quota is restored after the last consumer unsubscribes. If everything failed after an earlier success, the status is marked stale; if it never succeeded, the status is hidden.
+- A single provider failure does not block publishing a complete snapshot; concurrent refreshes reuse the in-flight request.
 
-`pi-dusage` 不调用 `ctx.ui.setFooter()`；`pi-dstatus` 可据此独占 Footer 视觉展示。
+`pi-dusage` does not call `ctx.ui.setFooter()`; `pi-dstatus` can therefore own the footer presentation exclusively.
 
-## Fast Mode 适配
+## Fast Mode integration
 
-安装 `pi-dfast` 后，`pi-dusage` 会消费公开的 `pi-dfast/updated` 快照。当当前会话的 Fast Mode（快速模式）首次变为对当前 `openai-codex` 模型活动，或活动模型发生变化时，立即合并触发一次 quota 刷新；重复快照不会产生额外请求。
+With `pi-dfast` installed, `pi-dusage` consumes the public `pi-dfast/updated` snapshot. When Fast Mode (快速模式) first becomes active for the current `openai-codex` model, or the active model changes, an immediate merged quota refresh is triggered; duplicate snapshots produce no extra request.
 
-这条适配只缩短 Fast quota（快速配额）状态进入用量快照的等待时间：`pi-dusage` 不读取 `pi-dfast` 私有配置，也不控制 Fast Mode。
+This integration only shortens the wait for the Fast quota (快速配额) state to appear in the usage snapshot: `pi-dusage` does not read `pi-dfast` private configuration and does not control Fast Mode.
 
-## 国际化
+## Internationalization
 
-所有可见文案通过 pi-di18n 的 `pi-i18n/requestApi` 事件接入多语言，内置 `en` 与 `zh-CN` 两套文案：
+All visible copy goes through the pi-di18n `pi-i18n/requestApi` event, with built-in `en` and `zh-CN` string sets:
 
-- 已安装 pi-di18n：注册 `dusage` namespace bundle，文案跟随 `/lang` 选择的语言；locale 切换后 overlay 自动重渲染。
-- 未安装 pi-di18n：回退到内置查表，按 `LANG` / `LC_ALL` 环境变量选择 `zh-CN` 或 `en`，不抛错。
+- With pi-di18n installed: a `dusage` namespace bundle is registered and the copy follows the language chosen by `/lang`; after a locale switch the overlay re-renders automatically.
+- Without pi-di18n: it falls back to a built-in lookup table, choosing `zh-CN` or `en` from the `LANG` / `LC_ALL` environment variables, without throwing.
 
-## 安装
+## Installation
 
-### 通过 npm 安装（推荐）
+### Via npm (recommended)
 
 ```bash
 pi install npm:@diwu507/pi-dusage
 ```
 
-安装后在 Pi 中执行：
+After installation, run this in Pi:
 
 ```text
 /reload
 ```
 
-也可以直接把包名加入 `~/.pi/agent/settings.json` 的 `packages`：
+You can also add the package name directly to the `packages` list in `~/.pi/agent/settings.json`:
 
 ```json
 "npm:@diwu507/pi-dusage"
 ```
 
-### 本地开发安装
+### Local development install
 
-把本仓库路径加入 `~/.pi/agent/settings.json` 的 `packages`：
+Add this repository's path to the `packages` list in `~/.pi/agent/settings.json`:
 
 ```json
 "/Users/diwu/Workspace/Codes/Githubs/pi-extensions/pi-dusage"
 ```
 
-然后在 Pi 中执行：
+Then run this in Pi:
 
 ```text
 /reload
 ```
 
-## 开发验证
+## Development
 
-需先将本仓库按「本地开发安装」加入 `~/.pi/agent/settings.json` 的 `packages`（本地路径直接读源码 `index.ts`，改完即时生效，无需重新安装）：
+```bash
+git clone https://github.com/ssdiwu/pi-dusage.git
+cd pi-dusage
+npm install
+npm run check          # tsc -p tsconfig.json && npm test
+```
+
+Load the checkout directly instead of installing it:
+
+```bash
+pi --no-session -p "/dusage"
+```
+
+## Verification
+
+Offline verification uses `npm run check`; the evidence ledger and the uncovered items are in [`doc/references/验证证据台账.md`](./doc/references/验证证据台账.md).
+
+For a real provider query, the repository must first be added to the `packages` list of `~/.pi/agent/settings.json` as described under "Local development install" (a local path reads the source `index.ts` directly, so changes take effect without reinstalling):
 
 ```bash
 PI_SKIP_VERSION_CHECK=1 pi --no-session -p "/dusage"
 ```
 
-离线验证（`npm run check`）的证据记录与未覆盖项见 [`doc/references/验证证据台账.md`](./doc/references/验证证据台账.md)。
+## Contributing
+
+- Read [`AGENTS.md`](AGENTS.md) first, then [`doc/README.md`](doc/README.md) and [`doc/术语表.md`](doc/术语表.md).
+- Behavior changes update this README first, then the code and tests, then both README versions (`README.md` in English and `README-zh.md` in Chinese) — the two versions must stay semantically in sync.
+- Provider, field, public snapshot, command, privacy or install behavior changes must land with matching behavior tests, including success, rate-limit, missing-field and error responses on redacted fixtures.
+- User-perceivable changes go to the changelog: daily Chinese entries are kept in [`CHANGELOG-zh.md`](CHANGELOG-zh.md) in this repository, and each released version mirrors the same user-perceivable facts into the English [`CHANGELOG.md`](CHANGELOG.md); both changelogs and both READMEs ship in the npm package.
+- One commit does one thing and follows Conventional Commits (约定式提交). Do not commit, push, tag, publish or modify the user's credentials without explicit authorization.
+
+## Documentation
+
+- [`doc/README.md`](./doc/README.md): document map and where each decision lives.
+- [`doc/术语表.md`](./doc/术语表.md): project terms.
+- [`doc/references/`](./doc/references/): sources, verification records and historical snapshots — not current authority.

@@ -1,64 +1,70 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+This project follows the basic format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). For tagged releases, use the version from the Git tag. The tagged release is maintained by the release owner in this English `CHANGELOG.md`; daily user-perceivable changes are recorded in the Chinese `CHANGELOG-zh.md` in this repository. Both files contain user-perceivable facts only and ship in the npm package.
+
+For new releases, use headings in the format `## [x.y.z] - YYYY-MM-DD`. When an entry can be linked unambiguously to a GitHub issue, append `(#xx)`. Historical entries keep their original heading format.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-25
+
 ### Added
-- 新增版本化 `pi-dusage/updated` quota 快照事件，以及 `pi-dusage/subscribe` / `pi-dusage/unsubscribe` 消费者协议。
-- 新增会话启动立即刷新、60 秒轮询、并发请求合并和安全的 Footer 文本回退。
-- 新增 `pi-dfast/updated` 适配：Fast Mode 对当前 Codex 模型变为活动时立即合并刷新 quota，重复快照不产生额外请求。
-- 新增 `xai`（Grok / SuperGrok）OAuth 订阅用量查询：使用只读 `/user` → `/billing?format=credits` 路径展示服务端明确的 week（或 5h）窗口，不展示 product 拆分或账单金额。
+- Added a versioned `pi-dusage/updated` quota snapshot event and a `pi-dusage/subscribe` / `pi-dusage/unsubscribe` consumer protocol.
+- Added immediate refresh at session start, 60-second polling, coalescing of concurrent requests, and a safe footer text fallback.
+- Added `pi-dfast/updated` integration: when Fast Mode becomes active for the current Codex model, quota is refreshed immediately and coalesced; duplicate snapshots produce no extra requests.
+- Added `xai` (Grok / SuperGrok) OAuth subscription usage queries: uses read-only `/user` → `/billing?format=credits` paths to display the server-specified week (or 5h) window, without product breakdowns or billing amounts.
 
 ### Changed
-- `pi-dusage` 不接管自定义 Footer；有结构化消费者时清除原生 `dusage` status，无消费者时持续提供回退文本。
+
+- Supports Pi 1.6.0.
+- `pi-dusage` does not take over a custom footer; it clears the native `dusage` status when structured consumers exist and keeps providing fallback text when none do.
 
 ### Fixed
-- TUI Overlay 渲染失败时回退为可读的纯文本额度结果；provider 错误详情不再直接透出到展示文本。
-- 防止 Overlay 刷新、i18n listener 和 session shutdown 之间的异常与竞态；结构化 quota 的 provider/window 标识不再依赖返回顺序。
-- MiniMax 在有稳定记录标识时保留独立 general 额度，避免重复窗口标识。
+- Falls back to readable plain-text quota results when TUI overlay rendering fails; provider error details are no longer exposed directly in display text.
+- Prevented exceptions and races between overlay refreshes, i18n listeners, and session shutdown; structured quota provider/window identifiers no longer depend on response order.
+- MiniMax retains separate general quotas when there is a stable record identifier, avoiding duplicate window identifiers.
 
 ## [0.2.0] - 2026-07-10
 
 ### Added
-- `/dusage` 现在会把 Codex 服务端返回的额外限额单独显示为卡片；名称随服务端返回的模型名称变化。
+- `/dusage` now shows extra limits returned by the Codex server as separate cards; the name follows the model name returned by the server.
 
 ### Changed
-- MiniMax CN 仅显示通用 `general` 额度，不再把 `video` 等多模态分类误导为独立套餐额度。
+- MiniMax CN now shows only the general `general` quota and no longer presents multimodal categories such as `video` as separate plan quotas.
 
 ## [0.1.0] - 2026-06-29
 
 ### Added
-- `openai-codex` 的 `access` 令牌过期时，`/dusage` 不再发请求拿到冰冷的 401，改为直接显示可操作提示（引导在 Pi 中使用 codex 发一句话触发自动续期）。扩展不自行刷新令牌，避免与 Pi 主程序的凭据管理冲突。
+- When the `openai-codex` `access` token expires, `/dusage` no longer sends a request just to get a bare 401; it instead shows an actionable hint (guiding the user to send a message via codex in Pi to trigger automatic renewal). The extension does not refresh the token itself, avoiding conflicts with Pi's own credential management.
 
 ## [0.0.3] - 2026-06-20
 
 ### Fixed
-- `/dusage` 遇到单个 provider 请求超时或网络异常时，不再整条命令失败；改为在该 provider 内显示错误，并继续展示其余 provider 结果。
-- 为请求超时与请求异常补充单独文案，避免向用户直接暴露 `This operation was aborted` 这类底层错误。
+- When a single provider request times out or hits a network error, `/dusage` no longer fails the whole command; it shows the error within that provider and continues displaying the other providers' results.
+- Added separate wording for request timeouts and request errors so low-level errors such as `This operation was aborted` are not exposed directly to users.
 
 ### Changed
-- 包名调整为 `@diwu507/pi-dusage`，避开 npm 对近似未作用域包名的发布拦截。
-- 补齐 `tsconfig.json`（TypeScript 配置），使 `npm run check` 可作为稳定的发布前校验命令使用。
+- Changed the package name to `@diwu507/pi-dusage` to avoid npm blocking publication of a too-similar unscoped name.
+- Added `tsconfig.json` (TypeScript configuration) so `npm run check` can serve as a reliable pre-release check.
 
 ## [0.0.2] - 2026-06-19
 
 ### Added
-- 接入 pi-di18n 国际化：通过 `pi-i18n/requestApi` 事件获取 `I18nApi`，注册 `dusage` namespace 的 `en` / `zh-CN` 文案；未安装 pi-di18n 时按 `LANG` / `LC_ALL` 回退内置查表。
-- `/lang` 切换语言后，TUI overlay 自动重渲染。
+- Added pi-di18n internationalization: obtains `I18nApi` through the `pi-i18n/requestApi` event and registers `en` / `zh-CN` strings for the `dusage` namespace; when pi-di18n is not installed, falls back to a built-in lookup table based on `LANG` / `LC_ALL`.
+- The TUI overlay re-renders automatically after changing language with `/lang`.
 
 ### Changed
-- 统一窗口排序：三个 provider 均按重置时间升序（短窗口如 5h 在上、长窗口 week/month 在下），不再依赖各 API 返回顺序。
-- 用量条颜色语义：进度条改为表示「剩余配额」——剩余越多填充越满且越绿，将耗尽时变红；右侧仍显示可使用量百分比。
+- Unified window ordering: all three providers now sort by reset time ascending (short windows such as 5h first, long week/month windows last), instead of relying on each API's response order.
+- Usage-bar color semantics: the bar now represents the remaining quota — the more that remains, the fuller and greener the bar, turning red as it runs out; the percentage still available remains shown on the right.
 
 ## [0.0.1] - 2026-06-18
 
 ### Added
-- 初始化 `pi-dusage` Pi `extension`（扩展）包。
-- 新增 `/dusage` slash command（斜杠命令）。
-- 接入 `openai-codex` 的 quota（配额）查询。
-- 接入 `zai-coding-cn` 的 quota（配额）查询。
-- 接入 `minimax-cn` 的 quota（配额）查询。
-- 支持 TUI `overlay`（覆盖层）卡片式展示。
-- 支持非 TUI 模式下的纯文本输出。
-- 新增最小项目文档：`README.md`、`doc/README.md`、`doc/术语表.md`、`AGENTS.md`。
+- Initialized the `pi-dusage` Pi `extension` package.
+- Added the `/dusage` slash command.
+- Added quota queries for `openai-codex`.
+- Added quota queries for `zai-coding-cn`.
+- Added quota queries for `minimax-cn`.
+- Added card-style TUI `overlay` display.
+- Added plain-text output in non-TUI mode.
+- Added minimal project documentation: `README.md`, `doc/README.md`, `doc/术语表.md`, `AGENTS.md`.
